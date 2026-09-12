@@ -13,12 +13,18 @@
 import assert from 'node:assert';
 import net from 'node:net';
 import http from 'node:http';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 // CI 健壮性：断言失败 / 未捕获拒绝时立即退出，避免 server 句柄让进程挂起白跑 6 小时
 process.on('unhandledRejection', (reason) => { console.error('Unhandled rejection:', reason); process.exit(1); });
 
-const CFG = `${process.env.USERPROFILE}\\.waimao\\config.json`;
-const originalRaw = (() => { try { return readFileSync(CFG, 'utf8'); } catch { return ''; } })();
+// 隔离：整场测试跑在一次性 WAIMAO_HOME 里（config/审计/预热当日 latch/预算
+// 全部落临时目录），连续运行互不残留，也绝不碰真实 ~/.waimao。
+// 必须在任何 await import('../dsh/…') 之前设置——config.js 求值时就读它。
+const WAIMAO_HOME = mkdtempSync(join(tmpdir(), 'waimao-e2e-'));
+process.env.WAIMAO_HOME = WAIMAO_HOME;
+const CFG = join(WAIMAO_HOME, 'config.json');
 function writeCfg(cfg) { writeFileSync(CFG, JSON.stringify(cfg)); }
 
 /* ================= 假 SMTP 服务器 ================= */
@@ -221,15 +227,16 @@ const crmMod = (await import('../dsh/crm.js'));
 const suppressMod = (await import('../dsh/suppress.js'));
 const auditMod = (await import('../dsh/audit.js'));
 
-// 清理旧 e2e 数据 + 注册测试线索
+// 清理旧 e2e 数据 + 注册测试线索（隔离目录下可能还没有 store，直接跳过）
 function cleanupE2e() {
   const storePath = crmMod.storeFile();
+  if (!existsSync(storePath)) return;
   const db = JSON.parse(readFileSync(storePath, 'utf8'));
   db.leads = db.leads.filter((l) => !String(l.domain ?? '').endsWith('e2e.test'));
   writeFileSync(storePath, JSON.stringify(db));
   for (const file of ['suppress.json', 'domain-blacklist.json']) {
     try {
-      const p = `${process.env.USERPROFILE}\\.waimao\\data\\${file}`;
+      const p = join(WAIMAO_HOME, 'data', file);
       const list = JSON.parse(readFileSync(p, 'utf8'));
       const filtered = Array.isArray(list) ? list.filter((item) => !(item.email ?? item.domain ?? '').includes('e2e.test')) : list;
       writeFileSync(p, JSON.stringify(filtered));
@@ -331,7 +338,7 @@ suppressMod.unsuppress('buyer1@e2e.test', 'e2e');
 // 域名黑名单拦截
 suppressMod.blacklistDomain('e2e.test', 'hard-bounce', 'e2e');
 await assert.rejects(() => tools.get('email_send').execute({ lead_id: lead1.id, subject: 'x', body: 'y' }), /黑名单/);
-const blPath = `${process.env.USERPROFILE}\\.waimao\\data\\domain-blacklist.json`;
+const blPath = join(WAIMAO_HOME, 'data', 'domain-blacklist.json');
 const blList = JSON.parse(readFileSync(blPath, 'utf8'));
 writeFileSync(blPath, JSON.stringify(blList.filter((d) => d.domain !== 'e2e.test')));
 // 空邮件拒绝
@@ -610,11 +617,7 @@ smtp.server.close();
 deepseek.server.close();
 evolution.server.close();
 cleanupE2e();
-if (originalRaw) {
-  writeCfg(JSON.parse(originalRaw.replace(/^\uFEFF/, '')));
-} else {
-  try { require('node:fs').unlinkSync(CFG); } catch {}
-}
+rmSync(WAIMAO_HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 console.log('ALL E2E LOCAL-SIMULATION TESTS PASSED');
 // 强制退出：仿真 server 已 .close()，但 keep-alive 连接会维持事件循环，导致 node 进程不退出
 process.exit(0);

@@ -14,7 +14,10 @@ import {
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-export const WAIMAO_DIR = join(homedir(), '.waimao');
+// WAIMAO_HOME 环境变量可整体重定位数据目录（e2e 测试隔离用）；默认 ~/.waimao
+export const WAIMAO_DIR = process.env.WAIMAO_HOME
+  ? join(process.env.WAIMAO_HOME)
+  : join(homedir(), '.waimao');
 export const CONFIG_PATH = join(WAIMAO_DIR, 'config.json');
 export const DATA_DIR = join(WAIMAO_DIR, 'data');
 export const EXPORT_DIR = join(DATA_DIR, 'exports');

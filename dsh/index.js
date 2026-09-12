@@ -1817,9 +1817,7 @@ function registerDataBackupTool(ctx) {
           return null;
         }
       };
-      const { homedir } = await import('node:os');
-      const home = homedir();
-      const data = (name) => read(join(home, '.waimao', 'data', name));
+      const data = (name) => read(join(DATA_DIR, name));
       // 审计日志尾部（JSONL 只取最后 200 行，避免备份无限膨胀）
       let auditTail = null;
       try {
