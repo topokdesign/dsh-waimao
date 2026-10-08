@@ -434,12 +434,13 @@ function registerLeadEnrichTool(ctx) {
         processed: records.length,
         kept: kept.length,
         savedToCrm: records.filter((item) => item.leadId).length,
-        excluded: records.filter((item) => !item.keep).map((item) => ({ url: item.url, kind: item.kind, reason: item.reason })),
+        excluded: records.filter((item) => !item.keep).map((item) => ({ url: item.url, kind: item.kind, reason: item.reason ?? '' })),
         leads: kept.map((item) => ({
-          leadId: item.leadId, company: item.company || item.title, url: item.url, kind: item.kind,
+          company: item.company || item.title, url: item.url, kind: item.kind,
           score: item.score, tier: item.tier, advice: item.advice,
           emails: item.contacts.emails, whatsapps: item.contacts.whatsapps, phones: item.contacts.phones,
-          error: item.error,
+          ...(item.leadId ? { leadId: item.leadId } : {}),
+          ...(item.error ? { error: item.error } : {}),
         })),
       };
     },
@@ -545,11 +546,14 @@ function registerEmailVerifyTool(ctx) {
           return cached;
         }
       }
-      const annotate = (result) => ({
-        ...result,
-        role: isRoleAddress(email),
-        domainSuggestion: suggestDomainFix(email.split('@')[1] ?? '') ?? undefined,
-      });
+      const annotate = (result) => {
+        const suggestion = suggestDomainFix(email.split('@')[1] ?? '');
+        return {
+          ...result,
+          role: isRoleAddress(email),
+          ...(suggestion ? { domainSuggestion: suggestion } : {}),
+        };
+      };
       // 一次性邮箱域名：B2B 场景几乎必然不是真实买家，直接判死不做 SMTP
       if (isDisposableDomain(email)) {
         const result = { email, status: 'disposable', reason: '一次性/临时邮箱域名' };
@@ -1417,7 +1421,7 @@ function registerSiteEmailsTool(ctx) {
         socials: harvest.socials,
         pagesChecked: harvest.pages.length,
         ...(verified ? { verified } : {}),
-        hint: harvest.emails.length === 0 ? '没抓到邮箱：站点可能用表单收集或 JS 渲染，试试 email_find 模式猜测+验证' : undefined,
+        ...(harvest.emails.length === 0 ? { hint: '没抓到邮箱：站点可能用表单收集或 JS 渲染，试试 email_find 模式猜测+验证' } : {}),
       };
     },
   });

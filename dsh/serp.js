@@ -137,7 +137,7 @@ async function searchSerpApi(query, { signal, apiKey, maxResults, proxy, maps = 
     return (payload.local_results ?? []).map((item) => ({
       title: stripHtml(item.title),
       url: item.website ?? `https://www.google.com/maps/place/${encodeURIComponent(item.title)}`,
-      snippet: [item.address, item.phone, (item.extensions ?? []).join(', ')].filter(Boolean).join(' | '),
+      snippet: [item.address, item.phone, (item.extensions ?? []).map((ext) => (typeof ext === 'string' ? ext : (ext?.text ?? ''))).filter(Boolean).join(', ')].filter(Boolean).join(' | '),
       phone: item.phone ?? '',
       address: item.address ?? '',
     }));
